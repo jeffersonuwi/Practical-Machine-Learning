@@ -1,0 +1,177 @@
+---
+title: "Practical Machine Learning Project Report"
+author: "Jefferson Bien-Aime"
+date: "1/5/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Data Preprocessing 
+
+```{r, cache = T}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+library(RColorBrewer)
+library(e1071)
+library(rattle)
+```
+
+### Download the Data
+```{r, cache = T}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+```
+
+
+### Read the Data
+After downloading the data from the data source, we can read the two csv files into two data frames.  
+```{r, cache = T}
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+
+As shown below there are 19622 observations and 160 variables in the Training dataset
+
+### Cleaning the Data
+```{r, cache = T}
+trainData<- trainRaw[, colSums(is.na(trainRaw)) == 0]
+testData <- testRaw[, colSums(is.na(testRaw)) == 0]
+dim(trainData)
+dim(testData)
+str(trainData)
+str(testData)
+```
+
+We can notice that many columns have NA values or blank values on almost every observation. So we will remove them, because they will not produce any information. The first seven columns give information about the people who did the test, and also timestamps. We will not take them in our model
+
+
+```{r, cache = T}
+trainData <- trainData[, -c(1:7)]
+testData <- testData[, -c(1:7)]
+dim(trainData)
+dim(testData)
+```
+
+## Preparing the Data for prediction
+
+Preparing the data for prediction by splitting the training data into 70% as train data and 30% as test data. This splitting will server also to compute the out-of-sample errors.
+
+```{r, cache = T}
+set.seed(1234) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testDataFromTrain <- trainData[-inTrain, ]
+dim(trainData)
+dim(testDataFromTrain)
+```
+
+### Cleaning even further by removing the variables that are near-zero-variance
+
+```{r, cache = T}
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testDataFromTrain  <- testDataFromTrain[, -NZV]
+dim(trainData)
+dim(testDataFromTrain)
+```
+
+
+## Model Building
+
+For this project we will use two different algorithms, classification trees and random forests, to predict the outcome.
+
+1. classification trees
+2. random forests
+
+
+### Prediction with classification trees
+
+
+```{r, cache = T}
+set.seed(12345)
+decisionTreeMod1 <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(decisionTreeMod1)
+```
+
+We then validate the model “decisionTreeModel” on the testDataFromTrain to find out how well it performs by looking at the accuracy variable.
+
+```{r, cache = T}
+testDataFromTrain$classe <- as.factor(testDataFromTrain$classe)
+predictTreeMod1 <- predict(decisionTreeMod1, testDataFromTrain, type = "class")
+cmtree <- confusionMatrix(predictTreeMod1, testDataFromTrain$classe)
+cmtree
+```
+
+We see that the accuracy rate of the model is low: 0.6967 and therefore the out-of-sample-error is about 0.3 which is considerable.
+
+#### Plot Matrix Result
+```{r, cache = T}
+plot(cmtree$table, col = cmtree$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+### Prediction with Random Forest
+
+```{r, cache = T}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+
+We then validate the model obtained model “modRF1” on the test data to find out how well it performs by looking at the Accuracy variable
+
+```{r, cache = T}
+predictRF1 <- predict(modRF1, newdata=testDataFromTrain)
+cmrf <- confusionMatrix(predictRF1, testDataFromTrain$classe)
+cmrf
+```
+The accuracy rate using the random forest is very high: Accuracy : 1 and therefore the out-of-sample-error is equal to 0***. But it might be due to overfitting.
+
+When plotting the model, we are getting the information below
+
+```{r, cache = T}
+plot(modRF1)
+```
+
+#### Plot Matrix 
+```{r, cache = T}
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+
+## Conclusion
+
+This shows that the random forest model is the best one. We will then use it to predict the values of classe for the test data set.
+
+```{r, cache = T}
+FinalTestPred <- predict(modRF1,newdata=testData)
+FinalTestPred
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
